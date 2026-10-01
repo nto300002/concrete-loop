@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/concrete-loop-core"]
+resolver = "2"
