@@ -1,4 +1,4 @@
-# Concrete Loop 仕様文書索引とMVPスコープ v1.0
+# Concrete Loop 仕様文書索引とMVPスコープ v1.1
 
 ## 1. 目的と適用範囲
 
@@ -23,7 +23,7 @@
 1. [Concrete Loop プロダクト仕様 改訂版](Concrete_Loop_プロダクト仕様_改訂版.md)の最上位原則を優先する。
 2. D-08〜D-12、Recovery最終確定追記、Test Strategy確定基準は、対象領域について先行するD-01〜D-07を補完・上書きする。
 3. D-11は状態の責務分離、D-12は削除・鍵・再現性・External Source状態・文書管理の境界を優先して定める。
-4. [技術構成 v1](技術構成_v1.md)は、確定済みのプロダクト要件を変えない範囲で実装境界を定める。
+4. [Application / Rust境界契約](Application_Rust境界契約.md)はDesktopの権限・Transaction・DTO境界を定め、[技術構成 v1](技術構成_v1.md)は実装構成を定める。
 5. [Test Strategy確定基準](Test_Strategy確定基準.md)のMVP必須Gateは、個別仕様の受入条件より優先して満たす。
 6. 同一優先度で矛盾する場合は実装を開始せず、差分を新しいDecision文書として記録する。
 
@@ -95,7 +95,7 @@
 
 ## 5. 文書索引
 
-`revision`は文書内の版番号、`commit`はGit履歴（`git log -- <path>`）で追跡する。正確なリリース時点は、そのリリースCommitを参照する。最新版だけを残すのではなく、`supersedes`で置換関係を表す。
+`revision`は文書内の版番号、`commit`はGit履歴（`git log -- <path>`）で追跡する。実装Issueは、`CONFIRMED`文書集合をGit tag `spec-baseline-v1.1`で固定して参照する。表中の`Git history`は履歴追跡用であり、実装時の可変参照ではない。最新版だけを残すのではなく、`supersedes`で置換関係を表す。
 
 | document_id | title / storage_location | version | commit / revision | status | supersedes / referenced_by |
 | --- | --- | --- | --- | --- | --- |
@@ -112,8 +112,9 @@
 | D-11 | [State Model](D-11_State_Model.md) | 0.1 | Git history | CONFIRMED | Root / Version / Event / Projectionの責務分離を定義 |
 | D-12 | [DB Schema補完仕様 A-E](D-12_DB_Schema補完仕様_A-E.md) | 最終版 | Git history | CONFIRMED | D-01〜D-11の補完仕様 |
 | SEC-01 | [Recovery最終確定追記](Recovery最終確定追記.md) | 最終確定 | Git history | CONFIRMED | D-02・D-03・D-12 BのRecovery Commit安全性を補完 |
-| TEST-01 | [Test Strategy確定基準](Test_Strategy確定基準.md) | 1.0 | Git history | CONFIRMED | MVP完成Gate。全実装Issueが参照 |
-| TECH-01 | [技術構成 v1](技術構成_v1.md) | 1.0 | Git history | CONFIRMED | D-01・D-06-D-07の実装境界を補完 |
+| TEST-01 | [Test Strategy](Test_Strategy確定基準.md) | 1.0 | spec-baseline-v1.1 | CONFIRMED | Gate、Fixture、期待結果、実行時点。全実装Issueが参照 |
+| TECH-01 | [技術構成 v1](技術構成_v1.md) | 1.0 | spec-baseline-v1.1 | CONFIRMED | D-01・D-06-D-07の実装構成を補完 |
+| APP-01 | [Application / Rust境界契約](Application_Rust境界契約.md) | 1.0 | spec-baseline-v1.1 | CONFIRMED | Desktopの権限・Transaction・DTO境界。TECH-01を具体化 |
 | DOMAIN-01 | Concrete Loop Domain詳細定義 v0.1（保存場所未登録） | 0.1 | — | UNTRACKED | このリポジトリ単体では保存場所・最新版・確定状態を追跡できない。追加・索引化されるまで実装根拠にしない |
 | UI-01 | [画面遷移設計 説明資料](画面遷移設計_説明資料.md) | 1.0 | Git history | CONFIRMED | P-01、D-08〜D-11をUIへ接続 |
 | UI-02 | [UIモック索引](design/mockups/README.md) | 1.0 | Git history | REFERENCE | UI-01に従属する静的モック |

@@ -19,6 +19,20 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// A randomly generated SQLCipher key. It intentionally exposes no string
+/// representation and is only accepted by the Rust-side storage adapter.
+pub struct DatabaseKey([u8; 32]);
+
+impl DatabaseKey {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    fn sqlcipher_hex(&self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+}
+
 /// Owns one SQLite connection whose foreign-key enforcement is always enabled.
 /// The production adapter will open SQLCipher using the same migration contract.
 pub struct Database {
@@ -30,8 +44,12 @@ impl Database {
         Self::from_connection(Connection::open_in_memory()?)
     }
 
-    pub fn open_path(path: impl AsRef<Path>) -> Result<Self> {
-        Self::from_connection(Connection::open(path)?)
+    /// Opens a persistent SQLCipher database. There is deliberately no public
+    /// unkeyed file-opening API.
+    pub fn open_encrypted_path(path: impl AsRef<Path>, key: &DatabaseKey) -> Result<Self> {
+        let connection = Connection::open(path)?;
+        apply_sqlcipher_key(&connection, key)?;
+        Self::from_connection(connection)
     }
 
     fn from_connection(mut connection: Connection) -> Result<Self> {
@@ -156,6 +174,31 @@ impl Database {
             |row| row.get(0),
         )?)
     }
+
+    pub fn register_fragment_resource_ref(
+        &mut self,
+        resource_ref_id: &str,
+        fragment_id: &str,
+        created_at: i64,
+    ) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO resource_refs
+             (id, resource_type, resource_id, fragment_id, created_at)
+             VALUES (?1, 'FRAGMENT', ?2, ?2, ?3)",
+            params![resource_ref_id, fragment_id, created_at],
+        )?;
+        Ok(())
+    }
+}
+
+fn apply_sqlcipher_key(connection: &Connection, key: &DatabaseKey) -> Result<()> {
+    // The value is derived only from fixed-size random bytes, then hex encoded;
+    // no user-controlled SQL is interpolated into this PRAGMA.
+    connection.execute_batch(&format!("PRAGMA key = \"x'{}'\";", key.sqlcipher_hex()))?;
+    connection.query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    Ok(())
 }
 
 fn migrate(connection: &mut Connection) -> Result<()> {
@@ -192,7 +235,12 @@ fn migrate(connection: &mut Connection) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Database, Error};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{Database, DatabaseKey, Error};
     use rusqlite::Connection;
 
     #[test]
@@ -231,6 +279,51 @@ mod tests {
                 supported: 1
             })
         ));
+    }
+
+    #[test]
+    fn encrypted_file_cannot_be_opened_without_its_key_or_reveal_plaintext() {
+        let path = std::env::temp_dir().join(format!(
+            "concrete-loop-encryption-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let key = DatabaseKey::from_bytes([7; 32]);
+        let wrong_key = DatabaseKey::from_bytes([8; 32]);
+
+        {
+            let mut database = Database::open_encrypted_path(&path, &key).unwrap();
+            database
+                .create_question("question-a", "question-a-v1", "秘密の問い", 100)
+                .unwrap();
+        }
+
+        let file = fs::read(&path).unwrap();
+        assert!(
+            !file
+                .windows("秘密の問い".len())
+                .any(|window| window == "秘密の問い".as_bytes())
+        );
+        assert!(
+            Connection::open(&path)
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM sqlite_master", [], |row| row
+                    .get::<_, i64>(0))
+                .is_err()
+        );
+        assert!(Database::open_encrypted_path(&path, &wrong_key).is_err());
+        assert_eq!(
+            Database::open_encrypted_path(&path, &key)
+                .unwrap()
+                .question_body("question-a-v1")
+                .unwrap(),
+            "秘密の問い"
+        );
+
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -280,6 +373,29 @@ mod tests {
     }
 
     #[test]
+    fn new_version_cannot_name_a_previous_version_from_another_root() {
+        let mut database = Database::open_in_memory().unwrap();
+        database
+            .create_question("question-a", "question-a-v1", "問いA", 100)
+            .unwrap();
+        database
+            .create_question("question-b", "question-b-v1", "問いB", 100)
+            .unwrap();
+
+        assert!(
+            database
+                .connection
+                .execute(
+                    "INSERT INTO question_versions
+                 (id, question_id, version_no, body, previous_version_id, created_at)
+                 VALUES ('question-a-v2', 'question-a', 2, '問いAの改訂', 'question-b-v1', 200)",
+                    []
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
     fn invalid_new_version_rolls_back_without_changing_the_current_pointer() {
         let mut database = Database::open_in_memory().unwrap();
         database
@@ -316,5 +432,40 @@ mod tests {
                 .is_err()
         );
         assert_eq!(database.question_body("question-a-v1").unwrap(), "問いA");
+    }
+
+    #[test]
+    fn direct_sql_cannot_mutate_an_immutable_transformation_event() {
+        let database = Database::open_in_memory().unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO transformations
+                 (id, transformation_type, reason, executed_by, method, created_at)
+                 VALUES ('transformation-a', 'MANUAL_CODING', '初回の判断', 'USER', 'MANUAL', 100)",
+                [],
+            )
+            .unwrap();
+
+        assert!(
+            database
+                .connection
+                .execute(
+                    "UPDATE transformations SET reason = '書き換え' WHERE id = 'transformation-a'",
+                    [],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn resource_reference_cannot_target_a_nonexistent_fragment() {
+        let mut database = Database::open_in_memory().unwrap();
+
+        assert!(
+            database
+                .register_fragment_resource_ref("resource-a", "fragment-that-does-not-exist", 100)
+                .is_err()
+        );
     }
 }

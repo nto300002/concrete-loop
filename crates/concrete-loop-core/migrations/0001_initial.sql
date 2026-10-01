@@ -31,10 +31,11 @@ CREATE TABLE external_artifact_versions (
     content TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     external_updated_at INTEGER,
-    previous_version_id TEXT REFERENCES external_artifact_versions(id),
+    previous_version_id TEXT,
     created_at INTEGER NOT NULL,
     UNIQUE (external_artifact_id, version_no),
-    UNIQUE (id, external_artifact_id)
+    UNIQUE (id, external_artifact_id),
+    FOREIGN KEY (previous_version_id, external_artifact_id) REFERENCES external_artifact_versions(id, external_artifact_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TABLE questions (
@@ -51,11 +52,12 @@ CREATE TABLE question_versions (
     question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
     version_no INTEGER NOT NULL CHECK (version_no > 0),
     body TEXT NOT NULL CHECK (length(trim(body)) > 0),
-    previous_version_id TEXT REFERENCES question_versions(id),
+    previous_version_id TEXT,
     created_at INTEGER NOT NULL,
     change_reason TEXT,
     UNIQUE (question_id, version_no),
-    UNIQUE (id, question_id)
+    UNIQUE (id, question_id),
+    FOREIGN KEY (previous_version_id, question_id) REFERENCES question_versions(id, question_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER question_versions_are_immutable
@@ -79,9 +81,10 @@ CREATE TABLE code_definition_versions (
     name TEXT NOT NULL CHECK (length(trim(name)) > 0),
     definition TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    previous_version_id TEXT REFERENCES code_definition_versions(id),
+    previous_version_id TEXT,
     UNIQUE (code_definition_id, version_no),
-    UNIQUE (id, code_definition_id)
+    UNIQUE (id, code_definition_id),
+    FOREIGN KEY (previous_version_id, code_definition_id) REFERENCES code_definition_versions(id, code_definition_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER code_definition_versions_are_immutable
@@ -106,9 +109,10 @@ CREATE TABLE variable_definition_versions (
     operational_definition TEXT NOT NULL,
     scale_definition TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    previous_version_id TEXT REFERENCES variable_definition_versions(id),
+    previous_version_id TEXT,
     UNIQUE (variable_definition_id, version_no),
-    UNIQUE (id, variable_definition_id)
+    UNIQUE (id, variable_definition_id),
+    FOREIGN KEY (previous_version_id, variable_definition_id) REFERENCES variable_definition_versions(id, variable_definition_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER variable_definition_versions_are_immutable
@@ -147,10 +151,28 @@ CREATE TABLE measurements (
 
 CREATE TABLE resource_refs (
     id TEXT PRIMARY KEY,
-    resource_type TEXT NOT NULL,
+    resource_type TEXT NOT NULL CHECK (resource_type IN ('FRAGMENT', 'CODE_ASSIGNMENT', 'MEASUREMENT', 'QUESTION_VERSION', 'EXTERNAL_ARTIFACT_VERSION', 'ANALYSIS_RESULT', 'INSIGHT_VERSION', 'LEARNING_NOTE_VERSION')),
     resource_id TEXT NOT NULL,
+    fragment_id TEXT UNIQUE REFERENCES fragments(id),
+    code_assignment_id TEXT UNIQUE REFERENCES code_assignments(id),
+    measurement_id TEXT UNIQUE REFERENCES measurements(id),
+    question_version_id TEXT UNIQUE REFERENCES question_versions(id),
+    external_artifact_version_id TEXT UNIQUE REFERENCES external_artifact_versions(id),
+    analysis_result_id TEXT UNIQUE REFERENCES analysis_results(id),
+    insight_version_id TEXT UNIQUE REFERENCES insight_versions(id),
+    learning_note_version_id TEXT UNIQUE REFERENCES learning_note_versions(id),
     created_at INTEGER NOT NULL,
-    UNIQUE (resource_type, resource_id)
+    UNIQUE (resource_type, resource_id),
+    CHECK (
+        (resource_type = 'FRAGMENT' AND resource_id = fragment_id AND fragment_id IS NOT NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'CODE_ASSIGNMENT' AND resource_id = code_assignment_id AND fragment_id IS NULL AND code_assignment_id IS NOT NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'MEASUREMENT' AND resource_id = measurement_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NOT NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'QUESTION_VERSION' AND resource_id = question_version_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NOT NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'EXTERNAL_ARTIFACT_VERSION' AND resource_id = external_artifact_version_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NOT NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'ANALYSIS_RESULT' AND resource_id = analysis_result_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NOT NULL AND insight_version_id IS NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'INSIGHT_VERSION' AND resource_id = insight_version_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NOT NULL AND learning_note_version_id IS NULL)
+        OR (resource_type = 'LEARNING_NOTE_VERSION' AND resource_id = learning_note_version_id AND fragment_id IS NULL AND code_assignment_id IS NULL AND measurement_id IS NULL AND question_version_id IS NULL AND external_artifact_version_id IS NULL AND analysis_result_id IS NULL AND insight_version_id IS NULL AND learning_note_version_id IS NOT NULL)
+    )
 );
 
 CREATE TABLE transformations (
@@ -210,9 +232,10 @@ CREATE TABLE analysis_plan_versions (
     method TEXT NOT NULL,
     parameters_json TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    previous_version_id TEXT REFERENCES analysis_plan_versions(id),
+    previous_version_id TEXT,
     UNIQUE (analysis_plan_id, version_no),
-    UNIQUE (id, analysis_plan_id)
+    UNIQUE (id, analysis_plan_id),
+    FOREIGN KEY (previous_version_id, analysis_plan_id) REFERENCES analysis_plan_versions(id, analysis_plan_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER analysis_plan_versions_are_immutable
@@ -265,10 +288,11 @@ CREATE TABLE insight_versions (
     body TEXT NOT NULL,
     uncertainty TEXT NOT NULL,
     origin_type TEXT NOT NULL,
-    previous_version_id TEXT REFERENCES insight_versions(id),
+    previous_version_id TEXT,
     created_at INTEGER NOT NULL,
     UNIQUE (insight_id, version_no),
-    UNIQUE (id, insight_id)
+    UNIQUE (id, insight_id),
+    FOREIGN KEY (previous_version_id, insight_id) REFERENCES insight_versions(id, insight_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER insight_versions_are_immutable
@@ -291,10 +315,11 @@ CREATE TABLE learning_note_versions (
     version_no INTEGER NOT NULL CHECK (version_no > 0),
     body TEXT NOT NULL,
     origin_type TEXT NOT NULL,
-    previous_version_id TEXT REFERENCES learning_note_versions(id),
+    previous_version_id TEXT,
     created_at INTEGER NOT NULL,
     UNIQUE (learning_note_id, version_no),
-    UNIQUE (id, learning_note_id)
+    UNIQUE (id, learning_note_id),
+    FOREIGN KEY (previous_version_id, learning_note_id) REFERENCES learning_note_versions(id, learning_note_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TRIGGER learning_note_versions_are_immutable
@@ -388,6 +413,42 @@ CREATE TRIGGER user_decisions_are_immutable
 BEFORE UPDATE ON user_decisions
 BEGIN
     SELECT RAISE(ABORT, 'user_decisions are immutable');
+END;
+
+CREATE TRIGGER transformations_are_immutable
+BEFORE UPDATE ON transformations
+BEGIN
+    SELECT RAISE(ABORT, 'transformations are immutable');
+END;
+
+CREATE TRIGGER code_assignments_are_immutable
+BEFORE UPDATE ON code_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'code_assignments are immutable');
+END;
+
+CREATE TRIGGER measurements_are_immutable
+BEFORE UPDATE ON measurements
+BEGIN
+    SELECT RAISE(ABORT, 'measurements are immutable');
+END;
+
+CREATE TRIGGER dataset_snapshots_are_immutable
+BEFORE UPDATE ON dataset_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'dataset_snapshots are immutable');
+END;
+
+CREATE TRIGGER analysis_results_are_immutable
+BEFORE UPDATE ON analysis_results
+BEGIN
+    SELECT RAISE(ABORT, 'analysis_results are immutable');
+END;
+
+CREATE TRIGGER evidence_links_are_immutable
+BEFORE UPDATE ON evidence_links
+BEGIN
+    SELECT RAISE(ABORT, 'evidence_links are immutable');
 END;
 
 CREATE INDEX idx_question_versions_question ON question_versions(question_id, version_no);
